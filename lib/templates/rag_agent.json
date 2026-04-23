@@ -1,0 +1,26 @@
+{
+  "name": "RAG Agent",
+  "projectType": "rag_agent",
+  "description": "Retrieval-augmented generation system for document Q&A, knowledge base search, or internal tool assistance. Ingests and chunks documents, embeds with text-embedding-3-small, stores in ChromaDB, and retrieves relevant context for Sonnet to generate grounded answers.",
+  "defaultStack": [
+    { "layer": "Vector store", "choice": "ChromaDB (local persistent client)", "rationale": "Zero infra, survives restarts via persistent storage, sufficient for <500k chunks. Upgrade path: Qdrant Cloud for multi-user or remote access." },
+    { "layer": "Embeddings", "choice": "text-embedding-3-small (OpenAI) or claude-3-haiku for re-ranking", "rationale": "text-embedding-3-small: $0.02/MTok, strong retrieval quality. Switching cost is low — embeddings are swappable if ChromaDB collection is rebuilt." },
+    { "layer": "LLM (generation)", "choice": "claude-sonnet-4-6", "rationale": "Strong instruction-following for grounded answers with citations. Use system prompt to enforce 'only answer from retrieved context' constraint." },
+    { "layer": "Chunking", "choice": "Recursive character splitter, 512 tokens, 64-token overlap", "rationale": "Balances context density with retrieval precision. Overlap prevents answer truncation at chunk boundaries." },
+    { "layer": "Orchestration", "choice": "LangGraph (retrieve → rerank → generate graph)", "rationale": "Stateful graph handles retrieval retry, reranking step, and answer generation with tool use. Simpler than custom chain wiring." },
+    { "layer": "Document ingestion", "choice": "Python + PyMuPDF (PDF) / python-docx (Word) / BeautifulSoup (HTML)", "rationale": "Cover the three most common enterprise document types. Pluggable parser interface for adding new formats." },
+    { "layer": "API layer", "choice": "FastAPI + Pydantic v2", "rationale": "Exposes /query endpoint for UI or downstream consumers. Pydantic validates request shape and enforces max_tokens on the client side." }
+  ],
+  "phaseHints": [
+    "Phase 1 — Ingestion pipeline: document parsers per format, recursive chunking, text-embedding-3-small batch embedding, ChromaDB collection with metadata schema",
+    "Phase 2 — Retrieval & reranking: similarity search top-k, optional Haiku reranker to score chunk relevance, retrieval quality eval on test queries",
+    "Phase 3 — Generation & grounding: Sonnet with retrieved context in system prompt, citation extraction, 'I don't know' fallback when retrieved score < threshold",
+    "Phase 4 — API & eval: FastAPI /query endpoint, test set of 50 Q&A pairs, answer faithfulness scoring via Sonnet-as-judge, latency benchmarking"
+  ],
+  "architectureDecisions": [
+    { "decision": "Retrieval strategy", "choice": "Hybrid: dense vector search + BM25 keyword search, results merged with RRF", "rationale": "Dense retrieval misses exact keyword matches (model names, version numbers). BM25 covers lexical gaps. RRF fusion avoids score normalization complexity." },
+    { "decision": "Grounding enforcement", "choice": "System prompt constraint + post-generation faithfulness check via Sonnet-as-judge on 10% of queries", "rationale": "Prompt constraint is first line. Faithfulness check catches hallucinations that slip through. 10% sample balances cost vs. coverage." },
+    { "decision": "Chunk metadata schema", "choice": "source_file, page_number, section_title, ingested_at, chunk_index stored alongside vector", "rationale": "Enables citation rendering (page N of Document X) and filtered retrieval by source or date without re-embedding." }
+  ],
+  "costModelHint": "Ingestion: text-embedding-3-small at $0.02/MTok — 1000 pages ≈ 500k tokens ≈ $0.01 one-time. Per query: Sonnet input ~3k tokens (context + question) + ~500 output = ~$0.017/query. At 100 queries/day: ~$1.70/day. Haiku reranker adds ~$0.002/query if enabled."
+}

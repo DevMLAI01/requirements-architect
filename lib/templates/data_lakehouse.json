@@ -1,0 +1,26 @@
+{
+  "name": "Data Lakehouse",
+  "projectType": "data_lakehouse",
+  "description": "Multi-source data ingestion and transformation platform with a medallion architecture (bronze/silver/gold). Handles batch and micro-batch ingestion, SQL-based transformation via dbt, and serves analytical queries to BI tools or downstream ML pipelines.",
+  "defaultStack": [
+    { "layer": "Orchestration", "choice": "Apache Airflow (local, Astro CLI for dev)", "rationale": "DAG-based retry logic, sensor operators for upstream dependencies, built-in SLA monitoring. Prefer over Prefect for teams already on Airflow." },
+    { "layer": "Storage format", "choice": "Delta Lake (via deltalake Python library)", "rationale": "ACID transactions, time travel, and schema enforcement without a Spark cluster. Works with DuckDB for local query. Upgrade path: Databricks Delta or Snowflake." },
+    { "layer": "Transformation", "choice": "dbt Core (local)", "rationale": "SQL-first, version-controlled transformations. Models map cleanly to bronze→silver→gold layers. Lineage and docs are first-class." },
+    { "layer": "Query engine", "choice": "DuckDB", "rationale": "In-process OLAP on Delta/Parquet files. Zero infra, fast aggregations on GB-scale data. Upgrade path: Trino or Spark for TB-scale." },
+    { "layer": "Ingestion (API sources)", "choice": "Python requests + Pydantic v2 validation", "rationale": "Lightweight for REST API ingestion. Pydantic catches schema drift at ingest time before it reaches the bronze layer." },
+    { "layer": "Ingestion (DB sources)", "choice": "SQLAlchemy + incremental watermark logic", "rationale": "Cursor-based incremental extraction avoids full-table scans. Watermark stored in SQLite control table." },
+    { "layer": "Data quality", "choice": "Great Expectations (GE Core)", "rationale": "Expectation suites run post-ingestion on silver layer. Failures block gold layer promotion and trigger Airflow alerts." }
+  ],
+  "phaseHints": [
+    "Phase 1 — Bronze ingestion: Airflow DAGs per source, raw landing in Delta bronze layer, Pydantic schema validation, watermark tracking in SQLite control table",
+    "Phase 2 — Silver transformation: dbt models for cleaning, deduplication, type casting, and join enrichment; Great Expectations suite on silver output",
+    "Phase 3 — Gold serving layer: dbt models for business aggregates, DuckDB views for BI consumption, schema versioning and backwards-compatibility rules",
+    "Phase 4 — Observability & SLA: Airflow SLA miss alerts, row count anomaly detection, freshness checks, lineage documentation via dbt docs"
+  ],
+  "architectureDecisions": [
+    { "decision": "Medallion layer boundaries", "choice": "Bronze=raw+immutable, Silver=cleaned+deduped, Gold=business-ready aggregates", "rationale": "Immutable bronze preserves audit trail. Silver isolates cleaning logic from business logic. Gold is the only layer BI tools query." },
+    { "decision": "Incremental vs full refresh", "choice": "Incremental by default; full refresh only on schema change or backfill", "rationale": "Full refreshes on large tables block downstream SLAs. Watermark-based incremental keeps DAG runtime under 10 minutes at GB scale." },
+    { "decision": "LLM use (if any)", "choice": "claude-haiku-4-5-20251001 via Batch API for unstructured field classification only", "rationale": "Use LLMs only for fields that cannot be parsed with SQL (free-text categories, address normalization). Keep LLM calls out of the hot path." }
+  ],
+  "costModelHint": "Infrastructure cost near-zero for local dev (DuckDB, SQLite, dbt). Haiku Batch if LLM classification is in scope: ~$0.04/MTok input. Primary cost is Airflow worker compute if cloud-hosted. Target: full pipeline run under $0.10/day at GB scale."
+}

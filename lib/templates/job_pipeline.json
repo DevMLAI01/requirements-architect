@@ -1,0 +1,26 @@
+{
+  "name": "Job Search Pipeline",
+  "projectType": "job_pipeline",
+  "description": "Automated job listing scraper, AI-powered relevance scorer, and ranked shortlist generator. Scrapes listings via python-jobspy, classifies seniority and domain fit with Haiku Batch, scores shortlisted roles against a target profile with Sonnet, and delivers a ranked digest.",
+  "defaultStack": [
+    { "layer": "Scraping", "choice": "python-jobspy", "rationale": "Multi-board scraper (LinkedIn, Indeed, Glassdoor, ZipRecruiter) with a single interface. Handles pagination and rate limiting. No Playwright needed unless jobspy coverage is insufficient." },
+    { "layer": "Browser automation (fallback)", "choice": "Playwright (async)", "rationale": "Used only for boards not covered by jobspy. Always async — never sync Playwright in production code." },
+    { "layer": "LLM Tier A (bulk classification)", "choice": "claude-haiku-4-5-20251001 via Batch API", "rationale": "Classifies seniority (junior/mid/senior/principal/director), domain fit, and remote eligibility across all scraped listings. 50% batch discount. ~$0.06/day at 500 listings." },
+    { "layer": "LLM Tier B (deep scoring)", "choice": "claude-sonnet-4-6", "rationale": "Generates structured match score against target profile for Tier A survivors only. Hard cap: 20 listings per run. No listing enters Tier B without passing seniority filter." },
+    { "layer": "Vector store (semantic dedup)", "choice": "ChromaDB (local persistent)", "rationale": "Deduplicates listings across scrape runs by embedding title+company+location. Cosine similarity > 0.92 suppresses re-processing of seen listings." },
+    { "layer": "Storage", "choice": "SQLite (listings, scores, digests tables)", "rationale": "Sufficient for <100k listings. Stores raw JD text, Tier A labels, Tier B scores, and digest history." },
+    { "layer": "Orchestration", "choice": "Apache Airflow (local)", "rationale": "Daily DAG: scrape → deduplicate → Tier A classify → Tier B score → digest. Separate DAGs for scraping and scoring allow independent retries." }
+  ],
+  "phaseHints": [
+    "Phase 1 — Scraping & dedup: jobspy scraper DAG, SQLite listings table, ChromaDB semantic dedup, seen_listings fingerprint table, --dry-run mode",
+    "Phase 2 — Tier A classification: Haiku Batch job on unseen listings, seniority + domain + remote labels, confidence scores, filter pipeline (discard junior/mid)",
+    "Phase 3 — Tier B scoring: Sonnet structured match score against target profile Pydantic model, hard 20-listing cap, ranked output table, digest generation",
+    "Phase 4 — Delivery & reporting: daily digest email or Slack message, score trend charts, Tier B spend tracker, threshold tuning based on digest quality"
+  ],
+  "architectureDecisions": [
+    { "decision": "Seniority suppression gate", "choice": "No listing enters Tier B unless Haiku labels it principal, architect, staff, or director with confidence > 0.75", "rationale": "Empirically eliminates ~75% of listings from Sonnet spend. Confidence threshold is tunable; start at 0.75 and adjust based on false negative rate in digest review." },
+    { "decision": "Deduplication approach", "choice": "Two-layer: exact fingerprint (title+company+location hash) for same-day dedup, ChromaDB semantic similarity for cross-day dedup", "rationale": "Exact hash is fast and cheap. Semantic dedup catches reposted listings with minor title variations (e.g. 'Senior Engineer' vs 'Sr. Engineer, Platform')." },
+    { "decision": "JD storage format", "choice": "Plain text only in SQLite — no raw HTML", "rationale": "HTML inflates token count by 3-5× when sent to LLMs. Extract text at ingest time. Store HTML separately only if rendering is needed." }
+  ],
+  "costModelHint": "At 500 listings/day: Haiku Batch classification ~$0.06/day. Sonnet (20 listings × ~2k tokens I/O) ~$0.09/day. ChromaDB embedding (500 × 200 tokens) ~$0.002/day. Total: ~$0.15/day, ~$4.50/month. Hard cap on Tier B enforced in scorer/tier_b.py — log warning and truncate if input exceeds 20 listings."
+}

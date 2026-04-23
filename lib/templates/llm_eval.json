@@ -1,0 +1,25 @@
+{
+  "name": "LLM Eval Framework",
+  "projectType": "llm_eval",
+  "description": "Multi-dimensional evaluation framework for LLM outputs, prompts, or agent pipelines. Runs automated scoring across quality dimensions (faithfulness, relevance, format compliance, safety), tracks regressions across prompt versions, and surfaces failures for human review.",
+  "defaultStack": [
+    { "layer": "LLM-as-judge", "choice": "claude-sonnet-4-6", "rationale": "Strong instruction-following for structured scoring rubrics. Returns JSON scores with reasoning. Do not use Haiku as judge — low inter-rater agreement on nuanced dimensions." },
+    { "layer": "Bulk scoring (high volume)", "choice": "claude-haiku-4-5-20251001 via Batch API", "rationale": "Format compliance, length checks, and regex-based metrics don't need Sonnet. Batch API gives 50% cost reduction on Haiku at scale." },
+    { "layer": "Dataset storage", "choice": "SQLite with eval_runs, eval_items, scores tables", "rationale": "Relational model handles eval run metadata, per-item scores, and dimension breakdowns. No vector store needed unless semantic similarity is a scored dimension." },
+    { "layer": "Orchestration", "choice": "Python scripts + Airflow DAG for scheduled regression runs", "rationale": "Ad-hoc evals run via CLI. Scheduled regression runs (post-deploy) trigger via Airflow with Slack/email alert on score drop." },
+    { "layer": "Reporting", "choice": "Pandas + Plotly for score distribution charts, SQLite for raw data", "rationale": "Score histograms, dimension heatmaps, and version-over-version delta tables. No dashboarding infra needed for v1." },
+    { "layer": "Prompt versioning", "choice": "Git-tracked .txt files in /prompts/, referenced by SHA in eval_runs table", "rationale": "Ties eval results to exact prompt version. Regression is detected by comparing scores across prompt SHAs, not wall-clock time." }
+  ],
+  "phaseHints": [
+    "Phase 1 — Dataset & schema: eval dataset format (JSONL), SQLite schema (eval_runs, eval_items, scores), dataset loader, --dry-run flag that skips API calls",
+    "Phase 2 — Scorer implementation: Sonnet-as-judge with per-dimension rubric prompts, Haiku bulk scorer for format/length checks, score normalization to 0–1 scale",
+    "Phase 3 — Regression detection: baseline snapshot per prompt SHA, delta report (score change per dimension), alert threshold (e.g. >0.05 drop triggers warning), CI integration",
+    "Phase 4 — Reporting & human review: score distribution charts, worst-scoring items surfaced for human review, disagreement logging (human vs judge), weekly summary report"
+  ],
+  "architectureDecisions": [
+    { "decision": "Judge model selection", "choice": "claude-sonnet-4-6 only — no mixing judge models across runs", "rationale": "Changing the judge model mid-eval invalidates historical comparisons. Pin judge model in eval config and treat it as a versioned dependency." },
+    { "decision": "Scoring rubric format", "choice": "Per-dimension JSON output: {dimension, score, reasoning, confidence}", "rationale": "Structured output enables automated regression detection. Reasoning field enables human review of edge cases. Confidence filters out low-signal scores." },
+    { "decision": "Batch size for Haiku", "choice": "Max 100 items per Batch API call, await results before proceeding", "rationale": "Anthropic Batch API has a 24-hour result window. For real-time eval pipelines, use synchronous Haiku with 5-item batches per request instead." }
+  ],
+  "costModelHint": "Per eval run of 200 items: Sonnet-as-judge at 3 dimensions × 200 items × ~1k tokens input/output = ~$0.09. Haiku bulk (format checks) at 200 items × 500 tokens = ~$0.004. Full run: ~$0.10. At 5 runs/day (CI): ~$0.50/day. Monthly: ~$15. Cache system prompts to reduce Sonnet input cost by ~80%."
+}

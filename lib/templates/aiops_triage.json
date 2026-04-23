@@ -1,0 +1,26 @@
+{
+  "name": "AIOps Triage System",
+  "projectType": "aiops",
+  "description": "AI-powered alert triage pipeline for NOC/infrastructure teams. Ingests high-volume alerts from heterogeneous sources, classifies severity with Haiku Batch, suppresses false positives via deduplication windows, and routes actionable alerts to on-call channels with Sonnet-generated incident summaries.",
+  "defaultStack": [
+    { "layer": "Alert ingestion", "choice": "Kafka (Confluent local or MSK)", "rationale": "Decouples producers from consumers; handles burst alert traffic without backpressure on downstream classifiers; natural replay for missed events." },
+    { "layer": "LLM Tier A (classification)", "choice": "claude-haiku-4-5-20251001 via Batch API", "rationale": "Classifies severity, domain, and suppression eligibility at <$0.10/day for 500 alerts/hour. Synchronous Haiku would cost 2× with added latency." },
+    { "layer": "LLM Tier B (incident summary)", "choice": "claude-sonnet-4-6", "rationale": "Generates human-readable incident context for P1/P2 alerts only. Hard cap: 20 Sonnet calls per hour to bound cost." },
+    { "layer": "Agent orchestration", "choice": "LangGraph", "rationale": "Stateful graph handles the classify → deduplicate → route loop with built-in retry and conditional edges. Airflow is overkill for sub-minute latency requirements." },
+    { "layer": "Alert store", "choice": "SQLite (dev) → PostgreSQL (prod)", "rationale": "Alert metadata, deduplication state, and routing log fit in relational storage. No vector store needed unless semantic similarity dedup is in scope." },
+    { "layer": "Routing", "choice": "PagerDuty Events API v2", "rationale": "Standard for on-call routing; deduplicate key maps to alert fingerprint to prevent storm paging." },
+    { "layer": "Observability", "choice": "Prometheus + Grafana (local) or Datadog", "rationale": "Track alert volume, classification latency, false positive rate, and Sonnet call count against daily cap." }
+  ],
+  "phaseHints": [
+    "Phase 1 — Ingestion & normalization: Kafka consumer, per-source schema adapters, SQLite alert store, deduplication fingerprinting",
+    "Phase 2 — Tier A classification: Haiku Batch job for severity/domain/suppression labels, confidence scoring, filter pipeline",
+    "Phase 3 — Tier B routing: Sonnet incident summary for P1/P2, PagerDuty Events API integration, escalation logic, hard Sonnet cap enforcement",
+    "Phase 4 — Observability & tuning: false positive rate dashboard, alert volume trends, Sonnet spend tracker, threshold tuning loop"
+  ],
+  "architectureDecisions": [
+    { "decision": "Deduplication strategy", "choice": "Fingerprint hash (source + alert_name + labels) with 5-minute suppression window", "rationale": "Prevents alert storms from paging on-call N times for the same root cause. Window is configurable per alert class." },
+    { "decision": "Tier A → Tier B gating", "choice": "Only alerts with Haiku severity=P1 or P2 AND confidence>0.8 enter Sonnet", "rationale": "Eliminates ~80% of alert volume from Sonnet spend. Borderline alerts (confidence 0.6–0.8) queue for human review, not auto-escalation." },
+    { "decision": "Streaming vs batch classification", "choice": "Batch API for Tier A, synchronous for Tier B", "rationale": "Batch saves 50% on Haiku cost for non-latency-sensitive classification. Tier B is synchronous because P1 routing has a sub-60s SLA." }
+  ],
+  "costModelHint": "At 500 alerts/hour: Haiku Batch ~$0.08/day for classification. Sonnet capped at 20 calls/hour = max $0.65/day. Total <$0.75/day at full volume. Rate-limit Sonnet calls in the LangGraph node, log overage to stdout."
+}
