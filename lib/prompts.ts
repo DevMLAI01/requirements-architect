@@ -22,7 +22,10 @@ export function buildArchitectPrompt(
     ? `\n\n---\n\n${templateContext}\n\n---`
     : '';
 
-  const userMessage = `Project type: ${projectType}
+  const today = new Date().toISOString().split('T')[0];
+
+  const userMessage = `Today's date: ${today}
+Project type: ${projectType}
 
 Project description:
 ${description.trim()}

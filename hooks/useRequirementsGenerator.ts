@@ -16,6 +16,7 @@ type Action =
   | { type: 'APPEND_OUTPUT'; chunk: string }
   | { type: 'SET_DONE'; ms: number }
   | { type: 'SET_ERROR'; error: string }
+  | { type: 'SET_REFINING' }
   | { type: 'RESET' };
 
 const initialState: WizardState = {
@@ -46,6 +47,8 @@ function reducer(state: WizardState, action: Action): WizardState {
       return { ...state, step: 'done', generationMs: action.ms };
     case 'SET_ERROR':
       return { ...state, step: 'error', error: action.error };
+    case 'SET_REFINING':
+      return { ...state, step: 'refining' };
     case 'RESET':
       return initialState;
   }
@@ -122,10 +125,49 @@ export function useRequirementsGenerator() {
 
   const canRetry = lastGenParams.current !== null;
 
+  const startRefine = useCallback(() => {
+    dispatch({ type: 'SET_REFINING' });
+  }, []);
+
+  const cancelRefine = useCallback(() => {
+    dispatch({ type: 'SET_DONE', ms: 0 });
+  }, []);
+
+  const submitRefinement = useCallback(async (previousOutput: string, feedback: string) => {
+    genStartRef.current = Date.now();
+    dispatch({ type: 'SET_GENERATING' });
+    try {
+      const res = await fetch('/api/refine', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ previousOutput, feedback }),
+      });
+
+      if (!res.ok) {
+        const data: { error?: string } = await res.json();
+        throw new Error(data.error ?? 'Refinement failed');
+      }
+
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        dispatch({ type: 'APPEND_OUTPUT', chunk: decoder.decode(value, { stream: true }) });
+      }
+      dispatch({ type: 'SET_DONE', ms: Date.now() - genStartRef.current });
+    } catch (err) {
+      dispatch({
+        type: 'SET_ERROR',
+        error: err instanceof Error ? err.message : 'Unknown error',
+      });
+    }
+  }, []);
+
   const reset = useCallback(() => {
     lastGenParams.current = null;
     dispatch({ type: 'RESET' });
   }, []);
 
-  return { state, submitDescription, submitAnswers, retryGenerate, canRetry, reset };
+  return { state, submitDescription, submitAnswers, retryGenerate, canRetry, startRefine, cancelRefine, submitRefinement, reset };
 }

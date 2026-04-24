@@ -4,10 +4,11 @@ import { useRequirementsGenerator } from '@/hooks/useRequirementsGenerator';
 import { DescriptionInput } from '@/components/DescriptionInput';
 import { ClarificationForm } from '@/components/ClarificationForm';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
+import { RefinementInput } from '@/components/RefinementInput';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 export default function Home() {
-  const { state, submitDescription, submitAnswers, retryGenerate, canRetry, reset } =
+  const { state, submitDescription, submitAnswers, retryGenerate, canRetry, startRefine, cancelRefine, submitRefinement, reset } =
     useRequirementsGenerator();
   const { step, description, projectType, questions, output, tokensEstimate, generationMs, error } =
     state;
@@ -84,8 +85,32 @@ export default function Home() {
               tokensEstimate={tokensEstimate}
               generationMs={generationMs}
               onReset={reset}
+              onRefine={startRefine}
             />
           </ErrorBoundary>
+        )}
+
+        {/* refining — feedback input */}
+        {step === 'refining' && (
+          <div className="flex flex-col gap-6">
+            <ErrorBoundary>
+              <MarkdownRenderer
+                content={output}
+                isDone={true}
+                tokensEstimate={tokensEstimate}
+                generationMs={generationMs}
+                onReset={reset}
+                onRefine={startRefine}
+              />
+            </ErrorBoundary>
+            <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-6 py-5">
+              <RefinementInput
+                onSubmit={(feedback) => submitRefinement(output, feedback)}
+                onCancel={cancelRefine}
+                isLoading={false}
+              />
+            </div>
+          </div>
         )}
 
         {/* error */}

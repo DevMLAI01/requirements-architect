@@ -4,6 +4,7 @@ export type WizardStep =
   | 'answering'
   | 'generating'
   | 'done'
+  | 'refining'
   | 'error';
 
 export type ProjectType =
@@ -39,4 +40,9 @@ export interface GenerateRequest {
   description: string;
   projectType: ProjectType;
   answers: string[];
+}
+
+export interface RefineRequest {
+  previousOutput: string;
+  feedback: string;
 }

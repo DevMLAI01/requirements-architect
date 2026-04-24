@@ -13,6 +13,7 @@ interface Props {
   tokensEstimate: number;
   generationMs: number;
   onReset: () => void;
+  onRefine?: () => void;
 }
 
 const components: Components = {
@@ -85,6 +86,7 @@ export function MarkdownRenderer({
   tokensEstimate,
   generationMs,
   onReset,
+  onRefine,
 }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState(false);
@@ -139,6 +141,14 @@ export function MarkdownRenderer({
             >
               Download .md
             </button>
+            {onRefine && (
+              <button
+                onClick={onRefine}
+                className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 transition-colors hover:border-zinc-400 hover:text-zinc-900"
+              >
+                Refine ✎
+              </button>
+            )}
             <button
               onClick={onReset}
               className="rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-zinc-700"
