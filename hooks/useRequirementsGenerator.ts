@@ -10,7 +10,7 @@ interface GenParams {
 }
 
 type Action =
-  | { type: 'SET_CLARIFYING' }
+  | { type: 'SET_CLARIFYING'; description: string; projectType: ProjectType }
   | { type: 'SET_QUESTIONS'; questions: string[] }
   | { type: 'SET_GENERATING' }
   | { type: 'APPEND_OUTPUT'; chunk: string }
@@ -33,7 +33,7 @@ const initialState: WizardState = {
 function reducer(state: WizardState, action: Action): WizardState {
   switch (action.type) {
     case 'SET_CLARIFYING':
-      return { ...state, step: 'clarifying', error: null };
+      return { ...state, step: 'clarifying', error: null, description: action.description, projectType: action.projectType };
     case 'SET_QUESTIONS':
       return { ...state, step: 'answering', questions: action.questions };
     case 'SET_GENERATING':
@@ -58,7 +58,7 @@ export function useRequirementsGenerator() {
 
   const submitDescription = useCallback(
     async (description: string, projectType: ProjectType) => {
-      dispatch({ type: 'SET_CLARIFYING' });
+      dispatch({ type: 'SET_CLARIFYING', description, projectType });
       try {
         const res = await fetch('/api/clarify', {
           method: 'POST',
