@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
+import remarkGfm from 'remark-gfm';
 import type { Components } from 'react-markdown';
 import { GenerationStats } from './GenerationStats';
 
@@ -150,7 +151,7 @@ export function MarkdownRenderer({
 
       {/* Content */}
       <div className="rounded-lg border border-zinc-200 bg-white px-8 py-6">
-        <ReactMarkdown rehypePlugins={[rehypeHighlight]} components={components}>
+        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]} components={components}>
           {content}
         </ReactMarkdown>
         {!isDone && (
